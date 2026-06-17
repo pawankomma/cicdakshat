@@ -1,0 +1,250 @@
+Since you need to perform this **on AWS EC2 using an Ansible control node**, here's the **simplest project structure and code** that satisfies all the requirements.
+
+---
+
+# Step 1: Create 3 EC2 Instances
+
+| Instance       | Purpose      |
+| -------------- | ------------ |
+| Ansible Server | Control Node |
+| Jenkins Server | Target 1     |
+| Tomcat Server  | Target 2     |
+
+Install Ubuntu on all three.
+
+---
+
+# Step 2: Install Ansible on Control Node
+
+```bash
+sudo apt update
+sudo apt install ansible -y
+```
+
+Check:
+
+```bash
+ansible --version
+```
+
+---
+
+# Step 3: Generate SSH Key
+
+On Ansible server:
+
+```bash
+ssh-keygen
+```
+
+Press **Enter** for everything.
+
+Copy key to Jenkins:
+
+```bash
+ssh-copy-id ubuntu@<Jenkins-IP>
+```
+
+Copy key to Tomcat:
+
+```bash
+ssh-copy-id ubuntu@<Tomcat-IP>
+```
+
+Verify:
+
+```bash
+ansible all -i inventory -m ping
+```
+
+---
+
+# Step 4: Create Project
+
+```bash
+mkdir DevOpsProject
+
+cd DevOpsProject
+```
+
+Create roles:
+
+```bash
+mkdir -p roles/common/tasks
+mkdir -p roles/jenkins/tasks
+mkdir -p roles/tomcat/tasks
+```
+
+---
+
+# Step 5: Create Inventory
+
+`inventory`
+
+```ini
+[jenkins]
+<Jenkins-IP> ansible_user=ubuntu
+
+[tomcat]
+<Tomcat-IP> ansible_user=ubuntu
+```
+
+Example:
+
+```ini
+[jenkins]
+54.12.34.56 ansible_user=ubuntu
+
+[tomcat]
+65.23.45.67 ansible_user=ubuntu
+```
+
+---
+
+# Step 6: common role
+
+`roles/common/tasks/main.yml`
+
+```yaml
+---
+- name: Install Java
+  apt:
+    name: openjdk-8-jdk
+    state: present
+    update_cache: yes
+```
+
+---
+
+# Step 7: Jenkins role
+
+`roles/jenkins/tasks/main.yml`
+
+```yaml
+---
+- name: Install Maven
+  apt:
+    name: maven
+    state: present
+
+- name: Add Jenkins key
+  shell: |
+    wget -q -O - https://pkg.jenkins.io/debian-stable/jenkins.io-2023.key | sudo apt-key add -
+
+- name: Add Jenkins repo
+  shell: |
+    echo deb https://pkg.jenkins.io/debian-stable binary/ | sudo tee /etc/apt/sources.list.d/jenkins.list
+
+- name: Update packages
+  apt:
+    update_cache: yes
+
+- name: Install Jenkins
+  apt:
+    name: jenkins
+    state: present
+
+- name: Start Jenkins
+  service:
+    name: jenkins
+    state: started
+    enabled: yes
+```
+
+---
+
+# Step 8: Tomcat role
+
+`roles/tomcat/tasks/main.yml`
+
+```yaml
+---
+- name: Create tomcat user
+  user:
+    name: tomcat
+
+- name: Install Tomcat9
+  apt:
+    name: tomcat9
+    state: present
+
+- name: Start Tomcat
+  service:
+    name: tomcat9
+    state: started
+    enabled: yes
+```
+
+---
+
+# Step 9: Create site.yml
+
+```yaml
+---
+- hosts: jenkins
+  become: yes
+
+  roles:
+    - common
+    - jenkins
+
+- hosts: tomcat
+  become: yes
+
+  roles:
+    - common
+    - tomcat
+```
+
+---
+
+# Step 10: Run Playbook
+
+```bash
+ansible-playbook -i inventory site.yml
+```
+
+---
+
+# Step 11: Verify
+
+Check Jenkins:
+
+```bash
+http://<Jenkins-IP>:8080
+```
+
+Check Tomcat:
+
+```bash
+http://<Tomcat-IP>:8080
+```
+
+---
+
+## Folder Structure
+
+```
+DevOpsProject/
+
+│── inventory
+│── site.yml
+
+└── roles
+
+    ├── common
+    │    └── tasks
+    │          └── main.yml
+
+    ├── jenkins
+    │    └── tasks
+    │          └── main.yml
+
+    └── tomcat
+         └── tasks
+               └── main.yml
+```
+
+### Note
+
+If you're using **Ubuntu 24.04**, `openjdk-8-jdk` and `tomcat9` may not be available in the default repositories. In that case, use **`openjdk-17-jdk`** and install Tomcat 9 manually (or use the repository version available for your Ubuntu release). If this is for an assessment that specifically requires **Java 8 and Tomcat 9**, let me know your Ubuntu version (`lsb_release -a`) and I'll provide the compatible Ansible playbooks.
